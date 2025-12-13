@@ -1,32 +1,91 @@
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Literal
-from PIL import Image
 
+from PIL import Image
 from fastapi import FastAPI, Form, File, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from openai import OpenAI  # NEW
 
 from image import generate_image            # def generate_image(output_path: str, prompt: str) -> None
 from ken_burns import generate_ken_burns_video  # def generate_ken_burns_video(image_path: str, video_path: str) -> None
 from inspiration import generate_prompt_from_inspiration  # new helper
 
 
+# ----- OpenAI client for creative prompts ----- #
+
+oa_client = OpenAI()  # uses OPENAI_API_KEY from env
+
+
+def generate_creative_prompt(theme: str) -> str:
+    """
+    Given a thematic description, ask the model to produce
+    a rich, varied, photo-realistic scene prompt.
+    """
+    meta = f"""
+    You will generate exactly ONE imaginative, varied, photo-realistic scene description
+    based on the following theme:
+
+    "{theme}"
+
+    Rules:
+    - The scene should use ONLY ONE, TWO, or THREE elements from the theme, no more. Do not try to cram all the theme elements into the prompt.
+    - Output only ONE prompt. No lists, no numbering, no "1." or "2.".
+    - The scene need not be entirely conventional- feel free to add a quirky twist, or even be a bit cheeky.
+    - Keep it concise: 2–4 sentences max.
+    - Describe a single coherent visual scene with a clear mood and setting.
+    - Describe a specific lighting, mood, and style for each prompt.
+    - Do NOT describe the theme itself — use it as inspiration.
+    - Always return only the final prompt text, nothing else.
+    """
+
+    resp = oa_client.chat.completions.create(
+        model="gpt-5", # 4.1 mini seemed stupid- same prompt every time
+        messages=[
+            {
+                "role": "system",
+                "content": "You are an imaginative prompt generator for image creation."
+            },
+            {
+                "role": "user",
+                "content": meta,
+            },
+        ],
+        max_completion_tokens=u2000,
+    )
+
+    return resp.choices[0].message.content.strip()
+
+
 # ----- App state ----- #
 
 class AppState:
     def __init__(self):
-        # mode: "manual" = use manual_prompt
-        #       "inspiration" = use inspiration_prompt (if set)
-        self.mode: Literal["manual", "inspiration"] = "manual"
+        # mode: "manual"       = use manual_prompt
+        #       "inspiration"  = use inspiration_prompt (if set)
+        #       "creative"     = auto-generate varied prompts from theme_prompt
+        self.mode: Literal["manual", "inspiration", "creative"] = "creative"
 
         self.manual_prompt: str = "a cat chasing a dog"
+
+        # Theme for creative mode
+        self.theme_prompt: str = (
+            "South Australian scenes featuring vineyards and rolling hills, "
+            "1830s Lutheran churches with tall steeples or spires, grand old stone wine tasting cellars, "
+            "roses, bluestone architecture, cottage gardens with lavender and wisteria, "
+            "grazing sheep, bustling farmers’ markets, cosy cafés serving coffee and dessert, "
+            "wine, and the occasional bright blue fairy wren perched nearby."
+        )
+
+        self.creative_prompt: Optional[str] = None
+        self.last_prompt_generated_at: Optional[datetime] = None
 
         self.inspiration_image_path: Optional[str] = None
         self.inspiration_prompt: Optional[str] = None
 
-        self.refresh_seconds: int = 300 # fast for dev  600  # 10 minutes
+        self.refresh_seconds: int = 120  # fast for dev; maybe 600 in prod
 
         self.last_image_generated_at: Optional[datetime] = None
         self.last_video_generated_at: Optional[datetime] = None
@@ -39,6 +98,9 @@ def current_prompt() -> str:
     """Return the active prompt depending on mode."""
     if state.mode == "inspiration" and state.inspiration_prompt:
         return state.inspiration_prompt
+    if state.mode == "creative" and state.creative_prompt:
+        return state.creative_prompt
+    # Fallback: manual
     return state.manual_prompt
 
 
@@ -75,6 +137,7 @@ app.mount("/inspiration", StaticFiles(directory=str(INSPIRATION_DIR)), name="ins
 async def index():
     mode_manual_checked = "checked" if state.mode == "manual" else ""
     mode_insp_checked = "checked" if state.mode == "inspiration" else ""
+    mode_creative_checked = "checked" if state.mode == "creative" else ""
 
     # Inspiration section
     insp_info = ""
@@ -105,6 +168,7 @@ async def index():
           label {{ display:block; margin-top: 1rem; }}
           textarea {{ width: 100%; height: 6rem; }}
           fieldset {{ margin-top: 1.5rem; }}
+          code {{ white-space: pre-wrap; }}
         </style>
       </head>
       <body>
@@ -121,10 +185,18 @@ async def index():
               <input type="radio" name="mode" value="inspiration" {mode_insp_checked}>
               Use prompt from inspiration image (if available)
             </label>
+            <label>
+              <input type="radio" name="mode" value="creative" {mode_creative_checked}>
+              Creative theme (auto-generated varied prompts)
+            </label>
           </fieldset>
 
           <label>Manual prompt:
             <textarea name="prompt">{state.manual_prompt}</textarea>
+          </label>
+
+          <label>Creative theme (used when mode = Creative):
+            <textarea name="theme_prompt">{state.theme_prompt}</textarea>
           </label>
 
           <label>Refresh interval (seconds):
@@ -147,7 +219,7 @@ async def index():
         {insp_info}
 
         <p style="margin-top:2rem;">
-          <strong>Active prompt:</strong><br>
+          <strong>Active prompt (last used):</strong><br>
           <code>{current_prompt()}</code>
         </p>
 
@@ -166,13 +238,28 @@ async def index():
 @app.post("/set-prompt", response_class=HTMLResponse)
 async def set_prompt_form(
     prompt: str = Form(...),
+    theme_prompt: str = Form(""),
     refresh_seconds: int = Form(600),
     mode: str = Form("manual"),
 ):
     # Update state
-    state.manual_prompt = prompt.strip() or state.manual_prompt
+    if prompt.strip():
+        state.manual_prompt = prompt.strip()
+
+    if theme_prompt.strip():
+        state.theme_prompt = theme_prompt.strip()
+
     state.refresh_seconds = max(int(refresh_seconds), 60)
-    state.mode = "inspiration" if mode == "inspiration" else "manual"
+
+    if mode == "inspiration":
+        state.mode = "inspiration"
+    elif mode == "creative":
+        state.mode = "creative"
+        # force new creative prompt next time
+        state.creative_prompt = None
+        state.last_prompt_generated_at = None
+    else:
+        state.mode = "manual"
 
     # force regeneration on next /api/next call
     state.last_image_generated_at = None
@@ -199,7 +286,7 @@ async def upload_inspiration(file: UploadFile = File(...)):
     content = await file.read()
     dest.write_bytes(content)
 
-    # ---- NEW: create JPEG preview if needed ----
+    # Create JPEG preview if needed
     preview_rel = None
     suffix = dest.suffix.lower()
     if suffix in [".heic", ".heif"]:
@@ -209,12 +296,12 @@ async def upload_inspiration(file: UploadFile = File(...)):
             preview_path = INSPIRATION_DIR / preview_name
             img.save(preview_path, "JPEG", quality=95)
             preview_rel = f"/inspiration/{preview_name}"
-        except Exception as e:
+        except Exception:
             preview_rel = None  # fallback to no preview
     else:
         preview_rel = f"/inspiration/{filename}"
 
-    # Generate prompt from the image (original HEIC)
+    # Generate prompt from the image (original HEIC/whatever)
     try:
         prompt = generate_prompt_from_inspiration(str(dest))
         state.inspiration_image_path = str(dest)
@@ -226,7 +313,7 @@ async def upload_inspiration(file: UploadFile = File(...)):
     except Exception as e:
         message = f"Error generating prompt from inspiration: {e}"
 
-    # ---- NEW: store preview path if available ----
+    # store preview path if available
     state.inspiration_preview_path = preview_rel
 
     return """
@@ -237,13 +324,13 @@ async def upload_inspiration(file: UploadFile = File(...)):
     """.format(message)
 
 
-
 # ----- JSON API ----- #
 
 class PromptIn(BaseModel):
     prompt: str
-    mode: Optional[Literal["manual", "inspiration"]] = None
+    mode: Optional[Literal["manual", "inspiration", "creative"]] = None
     refresh_seconds: Optional[int] = None
+    theme_prompt: Optional[str] = None
 
 
 @app.get("/api/prompt")
@@ -252,6 +339,8 @@ async def get_prompt():
         "mode": state.mode,
         "manual_prompt": state.manual_prompt,
         "inspiration_prompt": state.inspiration_prompt,
+        "theme_prompt": state.theme_prompt,
+        "creative_prompt": state.creative_prompt,
         "refresh_seconds": state.refresh_seconds,
         "active_prompt": current_prompt(),
     }
@@ -262,11 +351,17 @@ async def set_prompt(body: PromptIn):
     if body.prompt:
         state.manual_prompt = body.prompt.strip()
 
+    if body.theme_prompt:
+        state.theme_prompt = body.theme_prompt.strip()
+
     if body.refresh_seconds is not None:
         state.refresh_seconds = max(int(body.refresh_seconds), 60)
 
     if body.mode is not None:
         state.mode = body.mode
+        if body.mode == "creative":
+            state.creative_prompt = None
+            state.last_prompt_generated_at = None
 
     state.last_image_generated_at = None
     state.last_video_generated_at = None
@@ -276,6 +371,8 @@ async def set_prompt(body: PromptIn):
         "mode": state.mode,
         "manual_prompt": state.manual_prompt,
         "inspiration_prompt": state.inspiration_prompt,
+        "theme_prompt": state.theme_prompt,
+        "creative_prompt": state.creative_prompt,
         "refresh_seconds": state.refresh_seconds,
         "active_prompt": current_prompt(),
     }
@@ -297,6 +394,11 @@ async def get_next_asset(mode: Literal["image", "video"] = "image"):
     )
 
     if need_new_image:
+        # If in creative mode, generate a fresh prompt from the theme
+        if state.mode == "creative":
+            state.creative_prompt = generate_creative_prompt(state.theme_prompt)
+            state.last_prompt_generated_at = now
+
         # Generate a new image for the active prompt
         prompt = current_prompt()
         generate_image(str(IMAGE_FILE), prompt)
@@ -329,6 +431,7 @@ async def get_next_asset(mode: Literal["image", "video"] = "image"):
         "image_url": image_url,
         "video_url": video_url,
     }
+
 
 @app.get("/display", response_class=HTMLResponse)
 async def display_viewer():
@@ -374,13 +477,13 @@ async def display_viewer():
         <script>
           const apiUrl = "/api/next?mode=video";
           const origin = window.location.origin;
-        
+
           const imgEl = document.getElementById("image");
           const vidEl = document.getElementById("video");
-        
+
           let lastImageStamp = null;
           let lastVideoStamp = null;
-        
+
           async function fetchNext() {
             try {
               const res = await fetch(apiUrl, { cache: "no-store" });
@@ -389,14 +492,14 @@ async def display_viewer():
                 return;
               }
               const data = await res.json();
-        
+
               // Absolute URLs
               const imageUrl = data.image_url ? origin + data.image_url : null;
               const videoUrl = data.video_url ? origin + data.video_url : null;
-        
+
               const imageStamp = data.generated_image_at || null;
               const videoStamp = data.generated_video_at || null;
-        
+
               // Prefer video if available
               if (videoUrl) {
                 // Only reload video if the timestamp changed
@@ -420,10 +523,10 @@ async def display_viewer():
               console.error("Error fetching next asset", e);
             }
           }
-        
+
           // Initial fetch
           fetchNext();
-        
+
           // Poll periodically (can be shorter than refresh_seconds)
           setInterval(fetchNext, 60 * 1000); // every 60 seconds
         </script>
@@ -431,6 +534,7 @@ async def display_viewer():
       </body>
     </html>
     """
+
 
 # ----- Run with: python main.py ----- #
 
