@@ -24,12 +24,19 @@ def generate_creative_prompt(theme: str) -> str:
     Given a thematic description, ask the model to produce
     a rich, varied, photo-realistic scene prompt.
     """
+    # Include the last N prompts to avoid repetition
+    recent = "\n".join(f"- {p}" for p in state.recent_creative_prompts[-state.max_recent_prompts:])
+
     meta = f"""
     You will generate exactly ONE imaginative, varied, photo-realistic scene description
     based on the following theme:
 
     "{theme}"
 
+
+    Here are some previously used prompts. DO NOT repeat or closely imitate any of them:
+    {recent if recent else "(none yet)"}
+    
     Rules:
     - The scene should use ONLY ONE, TWO, or THREE elements from the theme, no more. Do not try to cram all the theme elements into the prompt.
     - Output only ONE prompt. No lists, no numbering, no "1." or "2.".
@@ -42,7 +49,7 @@ def generate_creative_prompt(theme: str) -> str:
     """
 
     resp = oa_client.chat.completions.create(
-        model="gpt-5", # 4.1 mini seemed stupid- same prompt every time
+        model="gpt-4.1", # 4.1 mini seemed stupid
         messages=[
             {
                 "role": "system",
@@ -53,10 +60,19 @@ def generate_creative_prompt(theme: str) -> str:
                 "content": meta,
             },
         ],
-        max_completion_tokens=u2000,
+        max_completion_tokens=2000,
     )
 
-    return resp.choices[0].message.content.strip()
+    prompt = resp.choices[0].message.content.strip()
+
+    # Store this prompt so we don’t repeat it later
+    state.recent_creative_prompts.append(prompt)
+
+    # Trim list if too long
+    if len(state.recent_creative_prompts) > state.max_recent_prompts:
+        state.recent_creative_prompts = state.recent_creative_prompts[-state.max_recent_prompts:]
+
+    return prompt
 
 
 # ----- App state ----- #
@@ -81,11 +97,13 @@ class AppState:
 
         self.creative_prompt: Optional[str] = None
         self.last_prompt_generated_at: Optional[datetime] = None
+        self.recent_creative_prompts: list[str] = []
+        self.max_recent_prompts: int = 20  # keep last 20, or whatever
 
         self.inspiration_image_path: Optional[str] = None
         self.inspiration_prompt: Optional[str] = None
 
-        self.refresh_seconds: int = 120  # fast for dev; maybe 600 in prod
+        self.refresh_seconds: int = 300  # fast for dev; maybe 600 in prod
 
         self.last_image_generated_at: Optional[datetime] = None
         self.last_video_generated_at: Optional[datetime] = None
