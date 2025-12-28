@@ -18,8 +18,9 @@ from inspiration import generate_prompt_from_inspiration  # new helper
 
 oa_client = OpenAI()  # uses OPENAI_API_KEY from env
 
+# Quirkiness is hard-coded for now- add UI later
+def generate_creative_prompt(theme: str, quirkiness: int = 1) -> str:
 
-def generate_creative_prompt(theme: str) -> str:
     """
     Given a thematic description, ask the model to produce
     a rich, varied, photo-realistic scene prompt.
@@ -27,26 +28,41 @@ def generate_creative_prompt(theme: str) -> str:
     # Include the last N prompts to avoid repetition
     recent = "\n".join(f"- {p}" for p in state.recent_creative_prompts[-state.max_recent_prompts:])
 
+    quirkiness_instructions = {
+        0: "Keep the scene entirely realistic and grounded in real-world South Australia.",
+        1: "Add a subtle creative twist or unexpectedly charming detail.",
+        2: "Introduce a whimsical or imaginative element that still fits the scene.",
+        3: "Allow surreal, dreamlike, or delightfully odd elements, while keeping the scene coherent."
+    }
+
+    quirk = quirkiness_instructions.get(quirkiness, quirkiness_instructions[0])
+
     meta = f"""
     You will generate exactly ONE imaginative, varied, photo-realistic scene description
     based on the following theme:
 
     "{theme}"
 
+    Scene variety instruction:
+    - {quirk}
 
-    Here are some previously used prompts. DO NOT repeat or closely imitate any of them:
+    Rules:
+    - Output only ONE prompt. No lists, no numbering.
+    - Select only ONE or TWO elements from the theme, not all of them.
+    - Keep it concise: 2–4 sentences max.
+    - Describe a single coherent visual scene with a clear mood.
+    - Do NOT repeat any recent prompts shown below.
+    - Do NOT mention these instructions or the theme directly.
+    - Return only the final prompt text.
+
+    Recent prompts:
     {recent if recent else "(none yet)"}
     
-    Rules:
-    - The scene should use ONLY ONE, TWO, or THREE elements from the theme, no more. Do not try to cram all the theme elements into the prompt.
-    - Output only ONE prompt. No lists, no numbering, no "1." or "2.".
-    - The scene need not be entirely conventional- feel free to add a quirky twist, or even be a bit cheeky.
-    - Keep it concise: 2–4 sentences max.
-    - Describe a single coherent visual scene with a clear mood and setting.
-    - Describe a specific lighting, mood, and style for each prompt.
-    - Do NOT describe the theme itself — use it as inspiration.
-    - Always return only the final prompt text, nothing else.
+    Image tweaks:
+    - Do not make the image too yellow.
     """
+    # ^^^ images were too yellow with gpt-image-1 but gpt-image-1.5 supposedly
+    # improves on 1's warm color bias, so the tweak might not be necessary.
 
     resp = oa_client.chat.completions.create(
         model="gpt-4.1", # 4.1 mini seemed stupid
@@ -87,12 +103,14 @@ class AppState:
         self.manual_prompt: str = "a cat chasing a dog"
 
         # Theme for creative mode
-        self.theme_prompt: str = (
-            "South Australian scenes featuring vineyards and rolling hills, "
-            "1830s Lutheran churches with tall steeples or spires, grand old stone wine tasting cellars, "
-            "roses, bluestone architecture, cottage gardens with lavender and wisteria, "
-            "grazing sheep, bustling farmers’ markets, cosy cafés serving coffee and dessert, "
-            "wine, and the occasional bright blue fairy wren perched nearby."
+        self.theme_prompt = (
+            "South Australian landscapes, towns, and coastal regions — including vineyards, "
+            "rolling agricultural hills, historic stone farmhouses, 19th-century Lutheran churches, "
+            "bluestone cottages, rugged coastlines, windswept beaches, estuaries, river gums, "
+            "vineyard cellars, wildlife such as kangaroos and blue fairy wrens, cottage gardens, "
+            "native flowers, olive groves, sheep paddocks, dusty backroads, outback colours, "
+            "quaint main streets, markets, cafés, and winery views — all evoking a sense of place, "
+            "sunlight, texture, and everyday beauty unique to regional South Australia."
         )
 
         self.creative_prompt: Optional[str] = None

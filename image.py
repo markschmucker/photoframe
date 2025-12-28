@@ -42,8 +42,9 @@ def generate_image(output_path, prompt):
     # 1. Generate the image
     # Supported sizes for gpt-image-1 are: '1024x1024', '1024x1536', '1536x1024', and 'auto'.
     # Other models are dall-e versions, but gpt-image-1 is supposedly the best.
+    # Update- there is a 1.5 now.
     result = client.images.generate(
-        model="gpt-image-1",
+        model="gpt-image-1.5",
         prompt=prompt,
         size="1536x1024", # use the largest supported landscape size for the model
         n=1,
