@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional, Literal
 from zoneinfo import ZoneInfo
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from fastapi import FastAPI, Form, File, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,6 +14,49 @@ from openai import OpenAI  # NEW
 from image import generate_image            # def generate_image(output_path: str, prompt: str) -> None
 from ken_burns import generate_ken_burns_video, random_ken_burns_params # def generate_ken_burns_video(image_path: str, video_path: str) -> None
 from inspiration import generate_prompt_from_inspiration  # new helper
+
+
+def burn_caption(image_path: str, lines: list[str]) -> None:
+    """Overlay caption lines onto the bottom-left of an image with a semi-transparent background."""
+    img = Image.open(image_path).convert("RGBA")
+    txt_overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(txt_overlay)
+
+    font_size = max(12, img.height // 30    )
+    font = None
+    for path in [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "C:/Windows/Fonts/arial.ttf",
+    ]:
+        try:
+            font = ImageFont.truetype(path, font_size)
+            break
+        except OSError:
+            continue
+    if font is None:
+        font = ImageFont.load_default(size=font_size)
+
+    padding = 40
+    line_spacing = 16
+    line_heights = [draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1] for line in lines]
+    block_h = sum(line_heights) + line_spacing * (len(lines) - 1) + padding * 2
+    max_line_w = max(draw.textbbox((0, 0), line, font=font)[2] - draw.textbbox((0, 0), line, font=font)[0] for line in lines)
+    block_w = max_line_w + padding * 2
+
+    margin = img.width // 20
+    x0 = margin
+    y0 = img.height - block_h - margin
+    draw.rounded_rectangle([x0, y0, x0 + block_w, y0 + block_h], radius=24, fill=(0, 0, 0, 140))
+
+    y = y0 + padding
+    for i, line in enumerate(lines):
+        draw.text((x0 + padding, y), line, font=font, fill=(255, 255, 255, 220))
+        y += line_heights[i] + line_spacing
+
+    out = Image.alpha_composite(img, txt_overlay).convert("RGB")
+    out.save(image_path, quality=95)
 
 
 # ----- OpenAI client for creative prompts ----- #
@@ -80,6 +123,8 @@ def generate_creative_prompt(theme: str, quirkiness: int = 1, style: str = "", t
         if composition else ""
     )
 
+    recent_subjects = ", ".join(state.recent_creative_subjects[-state.max_recent_prompts:])
+
     meta = f"""
     You will generate exactly ONE imaginative, varied scene description
     based on the following theme:
@@ -98,8 +143,9 @@ def generate_creative_prompt(theme: str, quirkiness: int = 1, style: str = "", t
     {time_instruction}
     {composition_instruction}
     - Do NOT repeat any recent prompts shown below.
+    - Do NOT feature any of these recently used subjects: {recent_subjects if recent_subjects else "(none yet)"}. Pick something DIFFERENT from the theme.
     - Do NOT mention these instructions or the theme directly.
-    - Return only the final prompt text.
+    - On the LAST line, write "Subjects:" followed by a comma-separated list of the 1-3 main subjects/elements you chose (e.g. "Subjects: vineyard, stone farmhouse"). This line will be stripped and used for tracking.
 
     Recent prompts:
     {recent if recent else "(none yet)"}
@@ -126,9 +172,22 @@ def generate_creative_prompt(theme: str, quirkiness: int = 1, style: str = "", t
         max_completion_tokens=2000,
     )
 
-    prompt = resp.choices[0].message.content.strip()
+    raw = resp.choices[0].message.content.strip()
 
-    # Store this prompt so we don’t repeat it later
+    # Extract and track subjects from the last line
+    lines = raw.split("\n")
+    prompt = raw
+    if lines[-1].lower().startswith("subjects:"):
+        subjects_line = lines[-1].split(":", 1)[1].strip()
+        subjects = [s.strip().lower() for s in subjects_line.split(",") if s.strip()]
+        state.recent_creative_subjects.extend(subjects)
+        # Trim subjects list
+        if len(state.recent_creative_subjects) > state.max_recent_prompts * 3:
+            state.recent_creative_subjects = state.recent_creative_subjects[-(state.max_recent_prompts * 3):]
+        # Remove the subjects line from the actual prompt
+        prompt = "\n".join(lines[:-1]).strip()
+
+    # Store this prompt so we don't repeat it later
     state.recent_creative_prompts.append(prompt)
 
     # Trim list if too long
@@ -187,17 +246,26 @@ class AppState:
             "Over-the-shoulder perspective",
         ]
 
+        self.image_models: list[str] = [
+            "openai:gpt-image-1.5",
+            "replicate:black-forest-labs/flux-2-pro",
+            "replicate:black-forest-labs/flux-schnell",
+        ]
+
         self.creative_prompt: Optional[str] = None
         self.last_creative_style: Optional[str] = None
         self.last_creative_composition: Optional[str] = None
+        self.last_image_model: Optional[str] = None
         self.last_prompt_generated_at: Optional[datetime] = None
         self.recent_creative_prompts: list[str] = []
+        self.recent_creative_subjects: list[str] = []
         self.max_recent_prompts: int = 20  # keep last 20, or whatever
 
         self.inspiration_image_path: Optional[str] = None
         self.inspiration_prompt: Optional[str] = None
 
-        self.refresh_seconds: int = 300  # fast for dev; maybe 600 in prod
+        self.show_caption: bool = True
+        self.refresh_seconds: int = 180  # fast for dev; maybe 600 in prod
 
         self.last_image_generated_at: Optional[datetime] = None
         self.last_video_generated_at: Optional[datetime] = None
@@ -319,6 +387,15 @@ async def index():
             <textarea name="compositions">{chr(10).join(state.compositions)}</textarea>
           </label>
 
+          <label>Image models (one per line, prefix with openai: or replicate:):
+            <textarea name="image_models">{chr(10).join(state.image_models)}</textarea>
+          </label>
+
+          <label>
+            <input type="checkbox" name="show_caption" value="1" {"checked" if state.show_caption else ""}>
+            Show caption overlay (style, composition, quirkiness)
+          </label>
+
           <label>Refresh interval (seconds):
             <input type="number" name="refresh_seconds" value="{state.refresh_seconds}" min="60" step="60">
           </label>
@@ -343,6 +420,8 @@ async def index():
           <code>{current_prompt()}</code>
         </p>
         <p>
+          <strong>Last model:</strong> <code>{state.last_image_model or "(none yet)"}</code>
+          &nbsp;|&nbsp;
           <strong>Last style:</strong> <code>{state.last_creative_style or "(none yet)"}</code>
           &nbsp;|&nbsp;
           <strong>Last composition:</strong> <code>{state.last_creative_composition or "(none yet)"}</code>
@@ -366,6 +445,8 @@ async def set_prompt_form(
     theme_prompt: str = Form(""),
     art_styles: str = Form(""),
     compositions: str = Form(""),
+    image_models: str = Form(""),
+    show_caption: Optional[str] = Form(None),
     refresh_seconds: int = Form(600),
     mode: str = Form("manual"),
 ):
@@ -379,6 +460,8 @@ async def set_prompt_form(
     # Parse one-per-line lists, stripping blanks
     state.art_styles = [s.strip() for s in art_styles.splitlines() if s.strip()]
     state.compositions = [s.strip() for s in compositions.splitlines() if s.strip()]
+    state.image_models = [s.strip() for s in image_models.splitlines() if s.strip()]
+    state.show_caption = show_caption == "1"
 
     state.refresh_seconds = max(int(refresh_seconds), 60)
 
@@ -464,6 +547,7 @@ class PromptIn(BaseModel):
     theme_prompt: Optional[str] = None
     art_styles: Optional[list[str]] = None
     compositions: Optional[list[str]] = None
+    image_models: Optional[list[str]] = None
 
 
 @app.get("/api/prompt")
@@ -476,8 +560,10 @@ async def get_prompt():
         "creative_prompt": state.creative_prompt,
         "art_styles": state.art_styles,
         "compositions": state.compositions,
+        "image_models": state.image_models,
         "last_creative_style": state.last_creative_style,
         "last_creative_composition": state.last_creative_composition,
+        "last_image_model": state.last_image_model,
         "refresh_seconds": state.refresh_seconds,
         "active_prompt": current_prompt(),
     }
@@ -496,6 +582,9 @@ async def set_prompt(body: PromptIn):
 
     if body.compositions is not None:
         state.compositions = [s.strip() for s in body.compositions if s.strip()]
+
+    if body.image_models is not None:
+        state.image_models = [s.strip() for s in body.image_models if s.strip()]
 
     if body.refresh_seconds is not None:
         state.refresh_seconds = max(int(body.refresh_seconds), 60)
@@ -518,8 +607,10 @@ async def set_prompt(body: PromptIn):
         "creative_prompt": state.creative_prompt,
         "art_styles": state.art_styles,
         "compositions": state.compositions,
+        "image_models": state.image_models,
         "last_creative_style": state.last_creative_style,
         "last_creative_composition": state.last_creative_composition,
+        "last_image_model": state.last_image_model,
         "refresh_seconds": state.refresh_seconds,
         "active_prompt": current_prompt(),
     }
@@ -541,6 +632,10 @@ async def get_next_asset(mode: Literal["image", "video"] = "image"):
     )
 
     if need_new_image:
+        # Pick a random model from the pool
+        model = random.choice(state.image_models) if state.image_models else "openai:gpt-image-1.5"
+        state.last_image_model = model
+
         # If in creative mode, generate a fresh prompt from the theme
         if state.mode == "creative":
             style = random.choice(state.art_styles) if state.art_styles else ""
@@ -550,13 +645,23 @@ async def get_next_asset(mode: Literal["image", "video"] = "image"):
             # Weighted: ~0% quiet, ~60% subtle, ~30% whimsical, ~10% surreal
             quirkiness = random.choices([0, 1, 2, 3], weights=[0, 6, 3, 1])[0]
             time_of_day = get_time_of_day_description()
-            print(f"[creative] Style: {style} | Composition: {composition} | Quirkiness: {quirkiness} | Time: {time_of_day}")
+            print(f"[creative] Model: {model} | Style: {style} | Composition: {composition} | Quirkiness: {quirkiness} | Time: {time_of_day}")
             state.creative_prompt = generate_creative_prompt(state.theme_prompt, quirkiness=quirkiness, style=style, time_of_day=time_of_day, composition=composition)
             state.last_prompt_generated_at = now
 
         # Generate a new image for the active prompt
         prompt = current_prompt()
-        generate_image(str(IMAGE_FILE), prompt)
+        generate_image(str(IMAGE_FILE), prompt, model=model)
+
+        if state.show_caption and state.mode == "creative":
+            caption_lines = [
+                f"Model: {state.last_image_model or '?'}",
+                f"Style: {state.last_creative_style or '?'}",
+                f"Composition: {state.last_creative_composition or '?'}",
+                f"Quirkiness: {quirkiness}",
+            ]
+            burn_caption(str(IMAGE_FILE), caption_lines)
+
         state.last_image_generated_at = now
 
         # Invalidate video so it's recreated on next video request
