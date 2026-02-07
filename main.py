@@ -1,6 +1,8 @@
+import random
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Literal
+from zoneinfo import ZoneInfo
 
 from PIL import Image
 from fastapi import FastAPI, Form, File, UploadFile
@@ -18,12 +20,35 @@ from inspiration import generate_prompt_from_inspiration  # new helper
 
 oa_client = OpenAI()  # uses OPENAI_API_KEY from env
 
+ADELAIDE_TZ = ZoneInfo("Australia/Adelaide")
+
+def get_time_of_day_description() -> str:
+    """Return a lighting/atmosphere hint based on the current Adelaide time."""
+    hour = datetime.now(ADELAIDE_TZ).hour
+    if 5 <= hour < 7:
+        return "early dawn, soft pink and lavender light on the horizon, the world just waking up"
+    elif 7 <= hour < 10:
+        return "fresh morning light, long golden shadows, crisp and clear"
+    elif 10 <= hour < 14:
+        return "bright midday sun, vivid colours, strong overhead light"
+    elif 14 <= hour < 16:
+        return "warm afternoon light, slightly softened, relaxed feel"
+    elif 16 <= hour < 18:
+        return "golden hour, rich amber light, long dramatic shadows"
+    elif 18 <= hour < 20:
+        return "dusk, deep orange and purple sky, fading light on the landscape"
+    elif 20 <= hour < 22:
+        return "twilight, deep blue sky with last traces of colour, early stars"
+    else:
+        return "nighttime, moonlit or starlit, cool blue tones, quiet stillness"
+
+
 # Quirkiness is hard-coded for now- add UI later
-def generate_creative_prompt(theme: str, quirkiness: int = 1) -> str:
+def generate_creative_prompt(theme: str, quirkiness: int = 1, style: str = "", time_of_day: str = "") -> str:
 
     """
     Given a thematic description, ask the model to produce
-    a rich, varied, photo-realistic scene prompt.
+    a rich, varied scene prompt in the given artistic style.
     """
     # Include the last N prompts to avoid repetition
     recent = "\n".join(f"- {p}" for p in state.recent_creative_prompts[-state.max_recent_prompts:])
@@ -37,8 +62,21 @@ def generate_creative_prompt(theme: str, quirkiness: int = 1) -> str:
 
     quirk = quirkiness_instructions.get(quirkiness, quirkiness_instructions[0])
 
+    style_instruction = (
+        f'- The image MUST be rendered in this artistic style: "{style}". '
+        f"Incorporate the visual qualities of this style into the scene description."
+        if style else
+        "- Use a photo-realistic style."
+    )
+
+    time_instruction = (
+        f'- Set the scene during this time of day: "{time_of_day}". '
+        f"The lighting, shadows, and atmosphere should reflect this."
+        if time_of_day else ""
+    )
+
     meta = f"""
-    You will generate exactly ONE imaginative, varied, photo-realistic scene description
+    You will generate exactly ONE imaginative, varied scene description
     based on the following theme:
 
     "{theme}"
@@ -51,13 +89,15 @@ def generate_creative_prompt(theme: str, quirkiness: int = 1) -> str:
     - Select only ONE or TWO elements from the theme, not all of them.
     - Keep it concise: 2–4 sentences max.
     - Describe a single coherent visual scene with a clear mood.
+    {style_instruction}
+    {time_instruction}
     - Do NOT repeat any recent prompts shown below.
     - Do NOT mention these instructions or the theme directly.
     - Return only the final prompt text.
 
     Recent prompts:
     {recent if recent else "(none yet)"}
-    
+
 
     """
     # Image tweaks:
@@ -114,7 +154,23 @@ class AppState:
             "sunlight, texture, and everyday beauty unique to regional South Australia."
         )
 
+        self.art_styles: list[str] = [
+            "Photo-realistic",
+            "Oil painting",
+            "Watercolour",
+            "Impressionist",
+            "Cinematic film still",
+            "Pencil sketch",
+            "Japanese woodblock print",
+            "Vintage travel poster",
+            "Soft pastel drawing",
+            "Golden-hour photography",
+            "Dramatic chiaroscuro",
+            "Studio Ghibli anime",
+        ]
+
         self.creative_prompt: Optional[str] = None
+        self.last_creative_style: Optional[str] = None
         self.last_prompt_generated_at: Optional[datetime] = None
         self.recent_creative_prompts: list[str] = []
         self.max_recent_prompts: int = 20  # keep last 20, or whatever
@@ -236,6 +292,10 @@ async def index():
             <textarea name="theme_prompt">{state.theme_prompt}</textarea>
           </label>
 
+          <label>Art styles (one per line — a random style is picked each cycle):
+            <textarea name="art_styles">{chr(10).join(state.art_styles)}</textarea>
+          </label>
+
           <label>Refresh interval (seconds):
             <input type="number" name="refresh_seconds" value="{state.refresh_seconds}" min="60" step="60">
           </label>
@@ -259,6 +319,10 @@ async def index():
           <strong>Active prompt (last used):</strong><br>
           <code>{current_prompt()}</code>
         </p>
+        <p>
+          <strong>Last style used:</strong>
+          <code>{state.last_creative_style or "(none yet)"}</code>
+        </p>
 
         <p>
           API endpoints:<br/>
@@ -276,6 +340,7 @@ async def index():
 async def set_prompt_form(
     prompt: str = Form(...),
     theme_prompt: str = Form(""),
+    art_styles: str = Form(""),
     refresh_seconds: int = Form(600),
     mode: str = Form("manual"),
 ):
@@ -285,6 +350,9 @@ async def set_prompt_form(
 
     if theme_prompt.strip():
         state.theme_prompt = theme_prompt.strip()
+
+    # Parse one-per-line styles, stripping blanks
+    state.art_styles = [s.strip() for s in art_styles.splitlines() if s.strip()]
 
     state.refresh_seconds = max(int(refresh_seconds), 60)
 
@@ -368,6 +436,7 @@ class PromptIn(BaseModel):
     mode: Optional[Literal["manual", "inspiration", "creative"]] = None
     refresh_seconds: Optional[int] = None
     theme_prompt: Optional[str] = None
+    art_styles: Optional[list[str]] = None
 
 
 @app.get("/api/prompt")
@@ -378,6 +447,8 @@ async def get_prompt():
         "inspiration_prompt": state.inspiration_prompt,
         "theme_prompt": state.theme_prompt,
         "creative_prompt": state.creative_prompt,
+        "art_styles": state.art_styles,
+        "last_creative_style": state.last_creative_style,
         "refresh_seconds": state.refresh_seconds,
         "active_prompt": current_prompt(),
     }
@@ -390,6 +461,9 @@ async def set_prompt(body: PromptIn):
 
     if body.theme_prompt:
         state.theme_prompt = body.theme_prompt.strip()
+
+    if body.art_styles is not None:
+        state.art_styles = [s.strip() for s in body.art_styles if s.strip()]
 
     if body.refresh_seconds is not None:
         state.refresh_seconds = max(int(body.refresh_seconds), 60)
@@ -410,6 +484,8 @@ async def set_prompt(body: PromptIn):
         "inspiration_prompt": state.inspiration_prompt,
         "theme_prompt": state.theme_prompt,
         "creative_prompt": state.creative_prompt,
+        "art_styles": state.art_styles,
+        "last_creative_style": state.last_creative_style,
         "refresh_seconds": state.refresh_seconds,
         "active_prompt": current_prompt(),
     }
@@ -433,7 +509,11 @@ async def get_next_asset(mode: Literal["image", "video"] = "image"):
     if need_new_image:
         # If in creative mode, generate a fresh prompt from the theme
         if state.mode == "creative":
-            state.creative_prompt = generate_creative_prompt(state.theme_prompt)
+            style = random.choice(state.art_styles) if state.art_styles else ""
+            state.last_creative_style = style
+            time_of_day = get_time_of_day_description()
+            print(f"[creative] Style: {style} | Time: {time_of_day}")
+            state.creative_prompt = generate_creative_prompt(state.theme_prompt, style=style, time_of_day=time_of_day)
             state.last_prompt_generated_at = now
 
         # Generate a new image for the active prompt

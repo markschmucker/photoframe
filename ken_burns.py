@@ -12,7 +12,7 @@ FOURK = (3840, 2160)  # (width, height)
 
 def random_ken_burns_params():
     # Gentle ranges; feel free to widen once you like it
-    duration_sec = random.choice([12, 15, 18])
+    duration_sec = random.choice([15, 20, 25])
     fps = 30
 
     zoom_end = random.uniform(1.06, 1.18)  # subtle → moderate zoom
