@@ -5,10 +5,36 @@ import cv2
 import numpy as np
 from PIL import Image
 import imageio
+import random
 
 
 FOURK = (3840, 2160)  # (width, height)
 
+def random_ken_burns_params():
+    # Gentle ranges; feel free to widen once you like it
+    duration_sec = random.choice([12, 15, 18])
+    fps = 30
+
+    zoom_end = random.uniform(1.06, 1.18)  # subtle → moderate zoom
+    zoom_start = 1.0
+
+    # Pan fractions (0..1). Keep small so you don't "run off" the subject.
+    # We'll pick a start and end; generator interprets them as fractions of max crop offset.
+    pan_start = (random.uniform(0.0, 0.25), random.uniform(0.0, 0.25))
+    pan_end   = (random.uniform(0.75, 1.0), random.uniform(0.75, 1.0))
+
+    # Randomize direction sometimes
+    if random.random() < 0.5:
+        pan_start, pan_end = pan_end, pan_start
+
+    return dict(
+        duration_sec=duration_sec,
+        fps=fps,
+        zoom_start=zoom_start,
+        zoom_end=zoom_end,
+        pan_start=pan_start,
+        pan_end=pan_end,
+    )
 
 def load_and_fill_4k(image_path: str) -> np.ndarray:
     """
