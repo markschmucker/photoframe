@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from openai import OpenAI  # NEW
 
 from image import generate_image            # def generate_image(output_path: str, prompt: str) -> None
-from ken_burns import generate_ken_burns_video  # def generate_ken_burns_video(image_path: str, video_path: str) -> None
+from ken_burns import generate_ken_burns_video, random_ken_burns_params # def generate_ken_burns_video(image_path: str, video_path: str) -> None
 from inspiration import generate_prompt_from_inspiration  # new helper
 
 
@@ -58,9 +58,10 @@ def generate_creative_prompt(theme: str, quirkiness: int = 1) -> str:
     Recent prompts:
     {recent if recent else "(none yet)"}
     
-    Image tweaks:
-    - Do not make the image too yellow.
+
     """
+    # Image tweaks:
+    # - Do not make the image too yellow.
     # ^^^ images were too yellow with gpt-image-1 but gpt-image-1.5 supposedly
     # improves on 1's warm color bias, so the tweak might not be necessary.
 
@@ -454,7 +455,8 @@ async def get_next_asset(mode: Literal["image", "video"] = "image"):
             or state.last_video_generated_at < state.last_image_generated_at
         )
         if need_new_video:
-            generate_ken_burns_video(str(IMAGE_FILE), str(VIDEO_FILE))
+            params = random_ken_burns_params()
+            generate_ken_burns_video(str(IMAGE_FILE), str(VIDEO_FILE), **params)
             state.last_video_generated_at = datetime.utcnow()
 
         video_url = VIDEO_URL
