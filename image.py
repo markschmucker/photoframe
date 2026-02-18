@@ -1,13 +1,14 @@
 from openai import OpenAI
-from config import *
 import base64
-from PIL import Image
+from PIL import Image, ImageCms
 import os
 import replicate
 
-# This will run on Render or similar
-
 client = OpenAI()
+
+# Build an in-memory sRGB ICC profile for embedding into output JPEGs
+_srgb_profile = ImageCms.createProfile("sRGB")
+_srgb_icc_bytes = ImageCms.ImageCmsProfile(_srgb_profile).tobytes()
 
 def upscale_to_4k(input_path, output_path):
     """
@@ -36,7 +37,7 @@ def upscale_to_4k(input_path, output_path):
     bottom = top + target_h
 
     img = img.crop((left, top, right, bottom))
-    img.save(output_path, quality=95)
+    img.save(output_path, "JPEG", quality=95, icc_profile=_srgb_icc_bytes)
     return img.size
 
 
@@ -105,5 +106,5 @@ def generate_image(output_path, prompt, model="openai:gpt-image-1.5"):
 
 
 if __name__ == "__main__":
-    prompt = "A rustic stone cottage sits prominently in the foreground, constructed from varied earthy stones that reflect a golden hue in the soft, evening light. The setting is a tranquil vineyard. In the background, a dramatic sunset paints the sky in gradients of orange, pink, and purple, casting a warm glow over the landscape. In the background is a magnificent historical winery and tasting center, with ornate lettering of 'Chateau Schmucker'. Large wine barrels are stacked outside the winery. A few kangaroos watch from the background. Workers toil in the vineyard, some drinking blue cans of beer, digging with shovels, forming very  large piles of soil. Blue beer cans are strewn about. The composition captures the charm of rural life with a blend of natural and architectural beauty, evoking a sense of nostalgia and peace. The style is realistic with vibrant, rich colors and a focus on photorealistic detail."
-    generate_image("test.png", prompt)
+    prompt = "A rustic stone cottage in a tranquil vineyard at sunset, golden light on earthy stones."
+    generate_image("test.jpg", prompt)
