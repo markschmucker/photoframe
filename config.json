@@ -1,0 +1,35 @@
+{
+  "theme": "South Australian landscapes, towns, and coastal regions \u2014 including vineyards, rolling agricultural hills, historic stone farmhouses, 19th-century Lutheran churches, bluestone cottages, rugged coastlines, windswept beaches, estuaries, river gums, vineyard cellars, wildlife such as kangaroos and blue fairy wrens, cottage gardens, native flowers, olive groves, sheep paddocks, dusty backroads, outback colours, quaint main streets, markets, cafes, and winery views \u2014 all evoking a sense of place, sunlight, texture, and everyday beauty unique to regional South Australia.",
+  "styles": [
+    "Photo-realistic",
+    "Oil painting",
+    "Watercolour",
+    "Impressionist",
+    "Cinematic film still",
+    "Pencil sketch",
+    "Japanese woodblock print",
+    "Vintage travel poster",
+    "Soft pastel drawing",
+    "Golden-hour photography",
+    "Dramatic chiaroscuro"
+  ],
+  "compositions": [
+    "Sweeping wide landscape",
+    "Intimate close-up detail",
+    "Bird's-eye aerial view",
+    "Low angle looking up",
+    "Shallow depth of field",
+    "Framed through a doorway or window",
+    "Symmetrical composition",
+    "Rule of thirds with strong foreground interest",
+    "Panoramic ultra-wide",
+    "Over-the-shoulder perspective"
+  ],
+  "models": [
+    "openai:gpt-image-1.5",
+    "replicate:black-forest-labs/flux-2-pro",
+    "replicate:black-forest-labs/flux-schnell"
+  ],
+  "count": 10,
+  "output": "./gallery"
+}

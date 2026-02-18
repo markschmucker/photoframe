@@ -26,6 +26,7 @@ There is no test suite, linter config, or CI pipeline.
 ### Source Files
 
 - **generate.py** — CLI entry point. Parses args, loops N times generating creative prompts + images, saves numbered JPEGs.
+- **config.json** — All tunable settings: theme, styles, compositions, models, default count/output. CLI args override these values.
 - **prompts.py** — Creative prompt generation via GPT-4.1. `PromptSession` tracks recent prompts/subjects to avoid repetition. Decoupled from any app framework.
 - **image.py** — Image generation via OpenAI (`gpt-image-1.5`) or Replicate (Flux models). Upscales to 4K (3840x2160) with center-crop, saves as JPEG with embedded sRGB ICC profile.
 - **inspiration.py** — Uses GPT-4o vision API to analyze reference images and produce generation prompts (available for future use).
