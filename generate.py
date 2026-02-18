@@ -22,10 +22,10 @@ def load_config() -> dict:
 
 
 def next_number(output_dir: Path) -> int:
-    """Find the highest existing NNN.jpg in output_dir and return NNN+1."""
+    """Find the highest existing NNN.png in output_dir and return NNN+1."""
     highest = 0
-    for f in output_dir.glob("*.jpg"):
-        m = re.match(r"^(\d+)\.jpg$", f.name)
+    for f in output_dir.glob("*.png"):
+        m = re.match(r"^(\d+)\.png$", f.name)
         if m:
             highest = max(highest, int(m.group(1)))
     return highest + 1
@@ -60,7 +60,7 @@ def main():
         model = random.choice(models)
         quirkiness = random.choices([0, 1, 2, 3], weights=[0, 6, 3, 1])[0]
 
-        print(f"\n[{i+1}/{count}] Generating image {num:03d}.jpg")
+        print(f"\n[{i+1}/{count}] Generating image {num:03d}.png")
         print(f"  Model:       {model}")
         print(f"  Style:       {style}")
         print(f"  Composition: {composition}")
@@ -75,7 +75,7 @@ def main():
         )
         print(f"  Prompt:      {prompt[:120]}{'...' if len(prompt) > 120 else ''}")
 
-        output_path = str(output_dir / f"{num:03d}.jpg")
+        output_path = str(output_dir / f"{num:03d}.png")
         generate_image(output_path, prompt, model=model)
         print(f"  Saved:       {output_path}")
 
