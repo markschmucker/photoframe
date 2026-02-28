@@ -23,6 +23,8 @@ STYLE_ABBREV = {
     "soft pastel drawing": "pastel",
     "golden-hour photography": "golden",
     "dramatic chiaroscuro": "chiaroscuro",
+    "impasto": "impasto",
+    "anthropomorphic": "anthro",
 }
 
 MODEL_ABBREV = {
@@ -70,7 +72,10 @@ def main():
     # CLI args override config
     count = args.count if args.count is not None else config.get("count", 10)
     output = args.output if args.output is not None else config.get("output", "./gallery")
-    theme = args.theme if args.theme is not None else config["theme"]
+    raw_theme = config["theme"]
+    theme = args.theme if args.theme is not None else (
+        " ".join(raw_theme) if isinstance(raw_theme, list) else raw_theme
+    )
     styles = config["styles"]
     compositions = config["compositions"]
     models = config["models"]

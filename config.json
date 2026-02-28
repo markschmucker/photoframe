@@ -1,6 +1,19 @@
 {
-  "theme": "South Australian landscapes, towns, and coastal regions \u2014 including vineyards, rolling agricultural hills, historic stone farmhouses, 19th-century Lutheran churches, bluestone cottages, rugged coastlines, windswept beaches, estuaries, river gums, vineyard cellars, wildlife such as kangaroos and blue fairy wrens, cottage gardens, native flowers, olive groves, sheep paddocks, dusty backroads, outback colours, quaint main streets, markets, cafes, and winery views \u2014 all evoking a sense of place, sunlight, texture, and everyday beauty unique to regional South Australia.",
+  "theme": [
+    "South Australian landscapes, towns, and coastal regions —",
+    "including vineyards, rolling agricultural hills,",
+    "historic stone farmhouses, 19th-century Lutheran churches,",
+    "bluestone cottages, rugged coastlines, windswept beaches,",
+    "estuaries, river gums, vineyard cellars,",
+    "wildlife such as kangaroos and blue fairy wrens,",
+    "cottage gardens, native flowers, olive groves,",
+    "sheep paddocks, dusty backroads, outback colours,",
+    "quaint main streets, markets, cafes, and winery views,",
+    "all evoking a sense of place, sunlight, texture,",
+    "and everyday beauty unique to regional South Australia."
+  ],
   "styles": [
+    "Impasto- applied in very thick layers—sometimes straight from the tube—so that the brushstrokes or palette knife marks remain clearly visible",
     "Photo-realistic",
     "Oil painting",
     "Watercolour",
@@ -10,7 +23,8 @@
     "Vintage travel poster",
     "Soft pastel drawing",
     "Golden-hour photography",
-    "Dramatic chiaroscuro"
+    "Dramatic chiaroscuro",
+    "Anthropomorphic — animals depicted as human-like characters wearing clothes, doing everyday human activities"
   ],
   "compositions": [
     "Sweeping wide landscape",
@@ -29,6 +43,6 @@
     "replicate:black-forest-labs/flux-2-pro",
     "replicate:black-forest-labs/flux-schnell"
   ],
-  "count": 10,
+  "count": 20,
   "output": "./gallery"
 }
