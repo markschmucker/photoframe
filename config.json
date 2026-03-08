@@ -42,9 +42,7 @@
     "Over-the-shoulder perspective"
   ],
   "models": [
-    "replicate:black-forest-labs/flux-2-pro"
-  ],
-  "_disabled_models": [
+    "replicate:black-forest-labs/flux-2-pro",
     "openai:gpt-image-1.5",
     "replicate:black-forest-labs/flux-schnell"
   ],
