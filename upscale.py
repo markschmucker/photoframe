@@ -113,7 +113,8 @@ def main():
         out_path = str(output_dir / out_name)
         print(f"[{i+1}/{len(files)}] {f.name} -> {out_name}")
         ai_upscale_to_4k(str(f), out_path)
-        print(f"  Saved:       {out_path}\n")
+        f.unlink()
+        print(f"  Saved:       {out_path} (deleted {f.name})\n")
 
     print(f"Done. {len(files)} images upscaled to {output_dir}/")
 
