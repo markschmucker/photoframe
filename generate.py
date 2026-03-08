@@ -5,6 +5,7 @@ import argparse
 import json
 import random
 import re
+import time
 from pathlib import Path
 
 from image import generate_image
@@ -92,7 +93,8 @@ def main():
         model = random.choice(models)
         quirkiness = random.choices([0, 1, 2, 3], weights=[0, 6, 3, 1])[0]
 
-        filename = f"{num:03d}-{abbrev_style(style)}-{abbrev_model(model)}.png"
+        tag = format(int(time.time()) & 0xFFFFFF, '06x')
+        filename = f"{num:03d}-{abbrev_style(style)}-{abbrev_model(model)}-{tag}.png"
 
         print(f"\n[{i+1}/{count}] Generating {filename}")
         print(f"  Model:       {model}")

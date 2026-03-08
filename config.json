@@ -9,6 +9,9 @@
     "cottage gardens, native flowers, olive groves,",
     "sheep paddocks, dusty backroads, outback colours,",
     "quaint main streets, markets, cafes, and winery views,",
+    "young adults and teens in colourful spandex cycling through the landscape,",
+    "road cyclists climbing hills, pelotons on country roads,",
+    "riders resting at a cafe stop, bikes leaning against stone walls,",
     "all evoking a sense of place, sunlight, texture,",
     "and everyday beauty unique to regional South Australia."
   ],
@@ -39,8 +42,10 @@
     "Over-the-shoulder perspective"
   ],
   "models": [
+    "replicate:black-forest-labs/flux-2-pro"
+  ],
+  "_disabled_models": [
     "openai:gpt-image-1.5",
-    "replicate:black-forest-labs/flux-2-pro",
     "replicate:black-forest-labs/flux-schnell"
   ],
   "count": 20,

@@ -76,6 +76,7 @@ def generate_creative_prompt(
     {composition_instruction}
     - Do NOT repeat any recent prompts shown below.
     - Do NOT feature any of these recently used subjects: {recent_subjects if recent_subjects else "(none yet)"}. Pick something DIFFERENT from the theme.
+    - Include a subtle artist's signature in the lower-right corner, as if the artist signed the finished piece.
     - Do NOT mention these instructions or the theme directly.
     - On the LAST line, write "Subjects:" followed by a comma-separated list of the 1-3 main subjects/elements you chose (e.g. "Subjects: vineyard, stone farmhouse"). This line will be stripped and used for tracking.
 
